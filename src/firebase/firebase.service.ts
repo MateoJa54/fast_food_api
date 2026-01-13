@@ -25,6 +25,7 @@ export class FirebaseService {
     }
 
     this.firestore = admin.firestore();
+    this.firestore.settings({ ignoreUndefinedProperties: true });
   }
 
   getFirestore() {

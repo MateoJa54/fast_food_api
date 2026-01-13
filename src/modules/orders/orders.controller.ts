@@ -25,19 +25,18 @@ export class OrdersController {
     return this.ordersService.createOrder(userId, dto);
   }
 
-  // GET /orders/:id
-  @Get(':id')
-  @UseGuards(FirebaseAuthGuard)
-  getById(@Param('id') id: string) {
-    return this.ordersService.getOrderById(id);
-  }
+@Get('my')
+@UseGuards(FirebaseAuthGuard)
+getMyOrders(@Req() req: any) {
+  return this.ordersService.getOrdersByUser(req.user.uid);
+}
 
-  // GET /orders/my
-  @Get('my')
-  @UseGuards(FirebaseAuthGuard)
-  getMyOrders(@Req() req: any) {
-    return this.ordersService.getOrdersByUser(req.user.uid);
-  }
+@Get(':id')
+@UseGuards(FirebaseAuthGuard)
+getById(@Param('id') id: string) {
+  return this.ordersService.getOrderById(id);
+}
+
 
   // PATCH /orders/:id/status
   @Patch(':id/status')

@@ -17,7 +17,7 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+const auth = getAuth(app);  
 
 const cred = await signInWithEmailAndPassword(auth, email, password);
 const token = await cred.user.getIdToken(true);

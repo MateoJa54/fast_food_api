@@ -10,6 +10,19 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { ORDER_STATUS_TRANSITIONS } from './dto/order-status-rules';
 import { OrderStatus } from './dto/order-status-enum';
 
+function removeUndefinedDeep(obj: any): any {
+  if (Array.isArray(obj)) return obj.map(removeUndefinedDeep);
+  if (obj && typeof obj === 'object') {
+    const clean: any = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v === undefined) continue;
+      clean[k] = removeUndefinedDeep(v);
+    }
+    return clean;
+  }
+  return obj;
+}
+
 @Injectable()
 export class OrdersService {
   constructor(
@@ -19,10 +32,10 @@ export class OrdersService {
 
   // POST /orders
   async createOrder(userId: string, dto: CreateOrderDto) {
-    const db = this.firebase.getFirestore();
+   const db = this.firebase.getFirestore();
 
-    // ✅ Convertir DTO (clases) a objetos planos (Firestore-safe)
-    const payload = instanceToPlain(dto) as any;
+  let payload = instanceToPlain(dto) as any;
+  payload = removeUndefinedDeep(payload);
 
     // Validaciones mínimas
     if (!payload.clientOrderId || typeof payload.clientOrderId !== 'string') {
