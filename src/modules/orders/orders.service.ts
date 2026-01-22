@@ -1,11 +1,8 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { instanceToPlain } from 'class-transformer';
 import { FirebaseService } from '../../firebase/firebase.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PaymentsService } from '../paymets/payments.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { ORDER_STATUS_TRANSITIONS } from './dto/order-status-rules';
 import { OrderStatus } from './dto/order-status-enum';
@@ -28,16 +25,18 @@ export class OrdersService {
   constructor(
     private readonly firebase: FirebaseService,
     private readonly notifications: NotificationsService,
+    private readonly paymentsService: PaymentsService,
   ) {}
 
   // POST /orders
   async createOrder(userId: string, dto: CreateOrderDto) {
-   const db = this.firebase.getFirestore();
+    const db = this.firebase.getFirestore();
 
-  let payload = instanceToPlain(dto) as any;
-  payload = removeUndefinedDeep(payload);
+    // DTO -> plain object -> limpiar undefined (Firestore no acepta undefined)
+    let payload = instanceToPlain(dto) as any;
+    payload = removeUndefinedDeep(payload);
 
-    // Validaciones mínimas
+    // Validaciones mínimas (contrato final)
     if (!payload.clientOrderId || typeof payload.clientOrderId !== 'string') {
       throw new BadRequestException('clientOrderId is required');
     }
@@ -47,8 +46,8 @@ export class OrdersService {
     if (!payload.totals || typeof payload.totals.total !== 'number') {
       throw new BadRequestException('totals.total is required');
     }
-    if (!payload.payment || !payload.payment.transactionId) {
-      throw new BadRequestException('payment.transactionId is required');
+    if (!payload.paymentTransactionId || typeof payload.paymentTransactionId !== 'string') {
+      throw new BadRequestException('paymentTransactionId is required');
     }
 
     // ✅ Idempotencia: mismo userId + clientOrderId => devolver pedido existente
@@ -62,7 +61,6 @@ export class OrdersService {
     if (!existing.empty) {
       const doc = existing.docs[0];
       const data = doc.data() as any;
-
       return {
         orderId: doc.id,
         status: data.status,
@@ -72,10 +70,21 @@ export class OrdersService {
       };
     }
 
+    // Obtener pago (seguro): el backend valida que sea del usuario
+    const payment = await this.paymentsService.getPaymentForUser(
+      userId,
+      payload.paymentTransactionId,
+    );
+
+    // Si el pago fue rechazado, no crear orden
+    if (payment.status && payment.status !== 'SIMULATED_APPROVED') {
+      throw new BadRequestException('Payment not approved');
+    }
+
     const nowIso = new Date().toISOString();
 
     // Documento final (snapshot inmutable)
-    const orderDoc = {
+    const orderDoc = removeUndefinedDeep({
       userId,
       clientOrderId: payload.clientOrderId,
 
@@ -89,20 +98,25 @@ export class OrdersService {
 
       totals: payload.totals,
 
-      payment: {
-        ...payload.payment,
-        paidAt: nowIso,
+      // ✅ snapshot del pago generado por backend
+      paymentSnapshot: {
+        transactionId: payment.id ?? payload.paymentTransactionId,
+        method: payment.method ?? null,
+        status: payment.status ?? null,
+        paidAt: payment.paidAt ?? nowIso,
+        brand: payment.brand ?? null,
+        last4: payment.last4 ?? null,
+        change: payment.change ?? null,
+        message: payment.message ?? null,
+        authCode: payment.authCode ?? null,
       },
 
       status: OrderStatus.CREATED,
       createdAt: nowIso,
 
-      // tracking compatible (simple)
       tracking: [{ status: OrderStatus.CREATED, timestamp: nowIso }],
-
-      // historial pro
       statusHistory: [],
-    };
+    });
 
     const ref = await db.collection('orders').add(orderDoc);
 
@@ -118,19 +132,14 @@ export class OrdersService {
   async getOrderById(orderId: string) {
     const db = this.firebase.getFirestore();
     const doc = await db.collection('orders').doc(orderId).get();
-
     if (!doc.exists) throw new NotFoundException('Order not found');
-
     return { id: doc.id, ...(doc.data() as any) };
   }
 
   // GET /orders/my
   async getOrdersByUser(userId: string) {
     const db = this.firebase.getFirestore();
-
-    // Si aquí te pide índice, puedes ordenar en memoria o crear index luego
     const snap = await db.collection('orders').where('userId', '==', userId).get();
-
     return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
   }
 
@@ -143,19 +152,18 @@ export class OrdersService {
     if (!doc.exists) throw new NotFoundException('Order not found');
 
     const order = doc.data() as any;
-
     const currentStatus: OrderStatus =
       (order.status as OrderStatus) ?? OrderStatus.CREATED;
 
     const newStatus: OrderStatus = status as OrderStatus;
 
-    // Validar que newStatus sea válido
+    // Validar status
     const allowedStatuses = Object.values(OrderStatus);
     if (!allowedStatuses.includes(newStatus)) {
       throw new BadRequestException(`Invalid status: ${status}`);
     }
 
-    // No hacer nada si es el mismo
+    // No-op si es igual
     if (currentStatus === newStatus) {
       return { orderId, status: newStatus, unchanged: true };
     }
@@ -170,7 +178,6 @@ export class OrdersService {
 
     const nowIso = new Date().toISOString();
 
-    // Historial pro
     const historyEntry = {
       fromStatus: currentStatus,
       toStatus: newStatus,
@@ -178,7 +185,6 @@ export class OrdersService {
       changedBy,
     };
 
-    // Tracking simple
     const trackingEntry = {
       status: newStatus,
       timestamp: nowIso,
@@ -190,7 +196,7 @@ export class OrdersService {
       tracking: this.firebase.getFieldValue().arrayUnion(trackingEntry),
     });
 
-    // Push al usuario
+    // Notificar al usuario
     const userId = order.userId;
     await this.notifications.sendToUser(
       userId,

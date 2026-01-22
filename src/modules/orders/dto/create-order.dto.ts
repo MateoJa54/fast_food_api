@@ -1,8 +1,8 @@
 import {
   IsArray,
   IsIn,
+  IsNotEmpty,
   IsNumber,
-  IsObject,
   IsOptional,
   IsString,
   Min,
@@ -10,16 +10,8 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-class ModifierSnapshotDto {
-  @IsString()
-  optionId: string;
-
-  @IsString()
-  name: string;
-
-  @IsNumber()
-  priceDelta: number;
-}
+export type DeliveryMode = 'PICKUP' | 'DELIVERY';
+export type PaymentMethod = 'CARD' | 'CASH';
 
 class OrderItemSnapshotDto {
   @IsString()
@@ -37,6 +29,7 @@ class OrderItemSnapshotDto {
   priceSnapshot: number;
 
   @IsArray()
+  @IsString({ each: true })
   tagsSnapshot: string[];
 
   @IsOptional()
@@ -45,18 +38,11 @@ class OrderItemSnapshotDto {
 
   @IsOptional()
   @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => ModifierSnapshotDto)
-  modifiersSnapshot?: ModifierSnapshotDto[];
-}
-
-class CouponSnapshotDto {
-  @IsString()
-  code: string;
-
-  @IsNumber()
-  @Min(0)
-  discountAmount: number;
+  modifiersSnapshot?: {
+    optionId: string;
+    name: string;
+    priceDelta: number;
+  }[];
 }
 
 class TotalsDto {
@@ -73,30 +59,13 @@ class TotalsDto {
   total: number;
 }
 
-class PaymentSnapshotDto {
+class CouponSnapshotDto {
   @IsString()
-  method: string; // CARD, CASH, WALLET
-
-  @IsString()
-  status: string; // SIMULATED_APPROVED / SIMULATED_DECLINED
-
-  @IsString()
-  transactionId: string;
-}
-
-class AddressSnapshotDto {
-  @IsString()
-  line1: string;
-
-  @IsOptional()
-  @IsString()
-  reference?: string;
+  code: string;
 
   @IsNumber()
-  lat: number;
-
-  @IsNumber()
-  long: number;
+  @Min(0)
+  discountAmount: number;
 }
 
 export class CreateOrderDto {
@@ -108,27 +77,26 @@ export class CreateOrderDto {
   @Type(() => OrderItemSnapshotDto)
   items: OrderItemSnapshotDto[];
 
+  @IsString()
   @IsIn(['PICKUP', 'DELIVERY'])
-  deliveryMode: 'PICKUP' | 'DELIVERY';
+  deliveryMode: DeliveryMode;
 
   @IsString()
   storeId: string;
 
   @IsOptional()
-  @ValidateNested()
-  @Type(() => AddressSnapshotDto)
-  addressSnapshot?: AddressSnapshotDto | null;
+  addressSnapshot?: any;
 
   @IsOptional()
   @ValidateNested()
   @Type(() => CouponSnapshotDto)
-  couponSnapshot?: CouponSnapshotDto | null;
+  couponSnapshot?: CouponSnapshotDto;
 
   @ValidateNested()
   @Type(() => TotalsDto)
   totals: TotalsDto;
 
-  @ValidateNested()
-  @Type(() => PaymentSnapshotDto)
-  payment: PaymentSnapshotDto;
+  @IsString()
+  @IsNotEmpty()
+  paymentTransactionId: string;
 }

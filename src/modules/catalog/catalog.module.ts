@@ -4,7 +4,7 @@ import { CatalogService } from './catalog.service';
 import { FirebaseModule } from '../../firebase/firebase.module';
 
 @Module({
-  imports: [FirebaseModule], // 👈 IMPORTA EL MÓDULO
+  imports: [FirebaseModule], 
   controllers: [CatalogController],
   providers: [CatalogService],
 })

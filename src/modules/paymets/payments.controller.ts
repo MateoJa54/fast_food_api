@@ -1,17 +1,16 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { SimulatePaymentDto } from './dto/simulate-payment.dto';
+import { FirebaseAuthGuard } from '../../auth/firebase-auth.guard';
 
 @Controller('payments')
 export class PaymentsController {
-  constructor(private readonly paymentsService: PaymentsService) {}
+  constructor(private readonly payments: PaymentsService) {}
 
   @Post('simulate')
-  simulate(@Body() dto: SimulatePaymentDto) {
-    return this.paymentsService.simulatePayment(
-      dto.amount,
-      dto.currency,
-      dto.paymentMethod,
-    );
+  @UseGuards(FirebaseAuthGuard)
+  simulate(@Req() req: any, @Body() dto: SimulatePaymentDto) {
+    const userId = req.user.uid;
+    return this.payments.simulate(userId, dto);
   }
 }
